@@ -43,12 +43,15 @@ http://wiki.github.com/hoffstaetter/python-tesseract
 
 # CHANGE THIS IF TESSERACT IS NOT IN YOUR PATH, OR IS NAMED DIFFERENTLY
 tesseract_cmd = 'tesseract'
+# DITTO
+convert_cmd = 'convert'
 
 import Image
 import StringIO
 import subprocess
 import sys
 import os
+from pyPdf import PdfFileWriter, PdfFileReader
 
 __all__ = ['image_to_string']
 
@@ -56,19 +59,19 @@ def run_tesseract(input_filename, output_filename_base, lang=None, boxes=False):
     '''
     runs the command:
         `tesseract_cmd` `input_filename` `output_filename_base`
-    
+
     returns the exit status of tesseract, as well as tesseract's stderr output
 
     '''
 
     command = [tesseract_cmd, input_filename, output_filename_base]
-    
+
     if lang is not None:
         command += ['-l', lang]
 
     if boxes:
         command += ['batch.nochop', 'makebox']
-    
+
     proc = subprocess.Popen(command,
             stderr=subprocess.PIPE)
     return (proc.wait(), proc.stderr.read())
@@ -113,7 +116,7 @@ class TesseractError(Exception):
 def image_to_string(image, lang=None, boxes=False):
     '''
     Runs tesseract on the specified image. First, the image is written to disk,
-    and then the tesseract command is run on the image. Resseract's result is
+    and then the tesseract command is run on the image. Tesseract's result is
     read, and the temporary files are erased.
 
     '''
@@ -142,25 +145,41 @@ def image_to_string(image, lang=None, boxes=False):
         cleanup(input_file_name)
         cleanup(output_file_name)
 
-if __name__ == '__main__':
-    if len(sys.argv) == 2:
-        filename = sys.argv[1]
-        try:
-            image = Image.open(filename)
-        except IOError:
-            sys.stderr.write('ERROR: Could not open file "%s"\n' % filename)
-            exit(1)
-        print image_to_string(image)
-    elif len(sys.argv) == 4 and sys.argv[1] == '-l':
-        lang = sys.argv[2]
-        filename = sys.argv[3]
+def is_pdf (filename):
+    return os.path.splitext(filename)[1] == '.pdf'
+
+def convert_pdf (pdf_file, lang=None):
+    pdf = PdfFileReader(file(pdf_file, "rb"))
+    for page in range(pdf.getNumPages()):
+        temp_image = '%s.bmp' % tempnam()
+        command = [convert_cmd,
+                   "-density", "300",
+                   "%s[%d]" % (pdf_file, page),
+                   temp_image]
+        proc = subprocess.call(command)
+        convert_file(temp_image, lang=lang)
+        print "\f"
+        os.unlink(temp_image)
+
+def convert_file (filename, lang=None):
+    if is_pdf(filename):
+        convert_pdf(filename, lang=lang)
+    else:
         try:
             image = Image.open(filename)
         except IOError:
             sys.stderr.write('ERROR: Could not open file "%s"\n' % filename)
             exit(1)
         print image_to_string(image, lang=lang)
+
+if __name__ == '__main__':
+    if len(sys.argv) == 2:
+        filename = sys.argv[1]
+        convert_file(filename)
+    elif len(sys.argv) == 4 and sys.argv[1] == '-l':
+        lang = sys.argv[2]
+        filename = sys.argv[3]
+        convert_file(filename, lang=lang)
     else:
         sys.stderr.write('Usage: python tesseract.py [-l language] input_file\n')
         exit(2)
-
